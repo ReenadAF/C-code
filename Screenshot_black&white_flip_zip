@@ -1,0 +1,80 @@
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+using System.IO.Compression;
+using System.Runtime.InteropServices;
+
+class Program
+{
+    [DllImport("user32.dll")]
+    static extern IntPtr GetDesktopWindow();
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetWindowDC(IntPtr hWnd);
+
+    [DllImport("gdi32.dll")]
+    static extern int BitBlt(IntPtr hDestDC, int x, int y, int nWidth, int nHeight,
+                             IntPtr hSrcDC, int xSrc, int ySrc, CopyPixelOperation dwRop);
+
+    [DllImport("user32.dll")]
+    static extern bool ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+    static void Main()
+    {
+        // 1) مسار سطح المكتب وملف ZIP
+        string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+        string tempImagePath = Path.Combine(desktop, "screenshot.png");
+        string zipPath = Path.Combine(desktop, "screenshot.zip");
+
+        // 2) أبعاد الشاشة
+        int width = 1920; 
+        int height = 1080;
+
+        Bitmap bmp = new Bitmap(width, height);
+        using (Graphics g = Graphics.FromImage(bmp))
+        {
+            IntPtr desktopWnd = GetDesktopWindow();
+            IntPtr dc = GetWindowDC(desktopWnd);
+            IntPtr gdc = g.GetHdc();
+
+            BitBlt(gdc, 0, 0, width, height, dc, 0, 0, CopyPixelOperation.SourceCopy);
+
+            g.ReleaseHdc(gdc);
+            ReleaseDC(desktopWnd, dc);
+        }
+
+        // 3) أبيض وأسود
+        for (int y = 0; y < bmp.Height; y++)
+        {
+            for (int x = 0; x < bmp.Width; x++)
+            {
+                Color pixel = bmp.GetPixel(x, y);
+                int gray = (int)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
+                bmp.SetPixel(x, y, Color.FromArgb(gray, gray, gray));
+            }
+        }
+
+        // 4) قلب الصورة
+        bmp.RotateFlip(RotateFlipType.RotateNoneFlipXY);
+
+        // 5) حفظ الصورة مؤقت
+        bmp.Save(tempImagePath, ImageFormat.Png);
+
+        // 6) ضغط الصورة داخل ZIP
+        if (File.Exists(zipPath)) File.Delete(zipPath);
+        using (FileStream zipToOpen = new FileStream(zipPath, FileMode.Create))
+        {
+            using (ZipArchive archive = new ZipArchive(zipToOpen, ZipArchiveMode.Create))
+            {
+                archive.CreateEntryFromFile(tempImagePath, "screenshot.png");
+            }
+        }
+
+        // 7) حذف المؤقت
+        File.Delete(tempImagePath);
+
+        Console.WriteLine("تم أخذ لقطة الشاشة ومعالجتها وضغطها بنجاح!");
+        Console.WriteLine("ملف ZIP موجود على سطح المكتب: " + zipPath);
+    }
+}
